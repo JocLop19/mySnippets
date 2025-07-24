@@ -1,4 +1,4 @@
-name: Codificação ICO
+name: Codificação ICO 1.2.1
 description: Script para criação de codificação e pauta iconográfica do documento
 host: WORD
 api_set: {}
@@ -24,11 +24,13 @@ script:
     v1.2.0 - Alterado método para contornar problema com identificação de página
     no macOS
 
+    v1.2.1 - Codigo para criação de retrancas simplificado
+
     */
 
 
     function obterVersaoScript() {
-      return "v1.2.0";
+      return "v1.2.1";
     }
 
 
@@ -142,9 +144,9 @@ script:
 
     function determinarTipo(text, icoRegex, iluRegex, cartoRegex, digRegex) {
       if (icoRegex.test(text)) {
-        if (text.includes("texto") || text.includes("trecho") || text.includes("recorte") || text.includes("citação")) {
+        if (text.includes("texto")) {
           return "T";
-        } else {
+        } else if (text.includes("imagem")) {
           return "F";
         }
       }
