@@ -19,12 +19,12 @@ script:
 
     v1.1.8 - Alterada função criarPauta para capturar página da retranca.
 
-    v1.1.9 - Alterado criarPauta para resultado condicionado.
+    v1.1.9 - Alterada função criarPauta para resultado condicionado.
 
     v1.2.0 - Alterado método para contornar problema com identificação de página
     no macOS
 
-    v1.2.1 - Codigo para criação de retrancas simplificado
+    v1.2.1 - Código para criação de retrancas simplificado
 
     */
 
