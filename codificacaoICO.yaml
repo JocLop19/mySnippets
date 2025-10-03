@@ -1,4 +1,4 @@
-name: Codificação ICO 1.2.1
+name: Codificação ICO 1.2.3
 description: Script para criação de codificação e pauta iconográfica do documento
 host: WORD
 api_set: {}
@@ -26,11 +26,15 @@ script:
 
     v1.2.1 - Código para criação de retrancas simplificado
 
+    v1.2.2 - Checkbox tipos altados para checked
+
+    v1.2.3 - Adicionados botões para escolha de número inicial
+
     */
 
 
     function obterVersaoScript() {
-      return "v1.2.1";
+      return "v1.2.3";
     }
 
 
@@ -63,12 +67,36 @@ script:
         // Criando prefixo a partir do nome do arquivo
         const prefix = fileName.trim();
 
-        // Inicializa os contadores
+
+        // Lê valores dos inputs e garante fallback em 1
+        let icoVal = parseInt(document.getElementById("txtIco").value);
+        let cartoVal = parseInt(document.getElementById("txtCarto").value);
+        let iluVal = parseInt(document.getElementById("txtIlu").value);
+
+        if (isNaN(icoVal) || icoVal < 1) {
+          icoVal = 1;
+          } else {
+            icoVal = icoVal;
+            }
+
+        if (isNaN(cartoVal) || cartoVal < 1) {
+          cartoVal = 1;
+          } else {
+            cartoVal = cartoVal;
+            }
+
+        if (isNaN(iluVal) || iluVal < 1) {
+          iluVal = 1;
+          } else {
+            iluVal = iluVal;
+            }
+
+        // Inicializa os contadores com base nos inputs
         const counters = {
-          T: 1,
-          I: 1,
-          F: 1,
-          M: 1,
+          T: icoVal,
+          F: icoVal,
+          I: iluVal,
+          M: cartoVal,
           CD: 1,
         };
 
@@ -234,7 +262,8 @@ script:
 
             let pageNumber = "?";
 
-            try { // método pages parece não ser suportado no macOS
+            try {
+              // método pages parece não ser suportado no macOS
               const retrancaRange = paragraph.getRange();
               const pages = retrancaRange.pages;
               pages.load();
@@ -246,9 +275,7 @@ script:
                 await context.sync();
                 pageNumber = page.index.toString();
               }
-            } catch (error) {
-
-            }
+            } catch (error) {}
 
             const retranca = paragraphText.replace("<<", "").replace(">>", "").trim();
             const descricao = nextParagraph.text.replace("<", "").replace(">", "").trim();
@@ -283,7 +310,7 @@ script:
     }
   language: typescript
 template:
-  content: "<section class=\"ms-Fabric ms-font-m\">\n\tUtilize os botões abaixo para criar ou remover as codificações, ou criar a pauta iconográfica.\n</section>\n\n<section class=\"ms-Fabric samples ms-font-m\">\n\t<h3>Codificação</h3>\n\t<p>\n\t\t<button id=\"btnCodificar\" class=\"ms-Button\">\n\t\t\t<span class=\"ms-Button-label\">Codificar</span>\n\t\t\t</button>\n\t\t<button id=\"btnDescodificar\" class=\"ms-Button\">\n\t\t\t<span class=\"ms-Button-label\">Descodificar</span>\t\t\t\n\t\t\t</button>\n\t</p>\n\n\t<h4>Pauta iconográfica</h4>\n\t<div style=\"margin-left: 20px;\">\n\t\t<label><input type=\"checkbox\" id=\"chkIco\"> ICO</label>\n\t\t<label><input type=\"checkbox\" id=\"chkCarto\"> CARTO</label>\n\t\t<label><input type=\"checkbox\" id=\"chkIlu\"> ILU</label>\n\t</div>\n\n\t<p>\n\t\t<button id=\"btnCriarPauta\" class=\"ms-Button\">\n\t\t\t\t<span class=\"ms-Button-label\">Criar Pauta</span>\n\t\t\t</button>\n\t</p>\n\n\t<div id=\"versao\"></div>\n\n\t<script>\n\t\twindow.onload = function() {\n\t\t\t\ttry {\n\t\t\t\t\tdocument.getElementById(\"versao\").innerText = obterVersaoScript();\n\t\t\t\t} catch (e) {\n\t\t\t\t\tdocument.getElementById(\"versao\").innerText = \"Versão do script: (não disponível)\";\n\t\t\t\t\tconsole.error(\"Erro ao obter versão:\", e);\n\t\t\t\t}\n\t\t\t};\n\t</script>\n\n</section>"
+  content: "<section class=\"ms-Fabric ms-font-m\">\n\tUtilize os botões abaixo para criar ou remover as codificações, ou criar a pauta iconográfica.\n</section>\n\n<section class=\"ms-Fabric samples ms-font-m\">\n\n\t<h3>Codificação</h3>\n\n\t<div style=\"margin-left: 20px;\">\n\t\t<label>ICO: <input type=\"text\" id=\"txtIco\" value=\"1\" style=\"width:28px;\"></label>\n\t\t<label>CARTO: <input type=\"text\" id=\"txtCarto\" value=\"1\" style=\"width:28px;\"></label>\n\t\t<label>ILU: <input type=\"text\" id=\"txtIlu\" value=\"1\" style=\"width:28px;\"></label>\n\t</div>\n\n\t<p style=\"display: flex; gap: 5px; margin-left: 0px;\">\n\t\t<button id=\"btnCodificar\" class=\"ms-Button\">\n\t\t\t<span class=\"ms-Button-label\">Codificar</span>\n\t\t\t</button>\n\t\t<button id=\"btnDescodificar\" class=\"ms-Button\">\n\t\t\t<span class=\"ms-Button-label\">Descodificar</span>\t\t\t\n\t\t\t</button>\n\t</p>\n\n\t<h4>Pauta iconográfica</h4>\n\t<div style=\"margin-left: 20px;\">\n\t\t<label><input type=\"checkbox\" id=\"chkIco\" checked> ICO</label>\n\t\t<label><input type=\"checkbox\" id=\"chkCarto\" checked> CARTO</label>\n\t\t<label><input type=\"checkbox\" id=\"chkIlu\" checked> ILU</label>\n\t</div>\n\n\t<p>\n\t\t<button id=\"btnCriarPauta\" class=\"ms-Button\">\n\t\t\t\t<span class=\"ms-Button-label\">Criar Pauta</span>\n\t\t\t</button>\n\t</p>\n\n\t<div id=\"versao\"></div>\n\n\t<script>\n\t\twindow.onload = function() {\n\t\t\t\ttry {\n\t\t\t\t\tdocument.getElementById(\"versao\").innerText = obterVersaoScript();\n\t\t\t\t} catch (e) {\n\t\t\t\t\tdocument.getElementById(\"versao\").innerText = \"Versão do script: (não disponível)\";\n\t\t\t\t\tconsole.error(\"Erro ao obter versão:\", e);\n\t\t\t\t}\n\t\t\t};\n\t</script>\n\n</section>"
   language: html
 style:
   content: |-
