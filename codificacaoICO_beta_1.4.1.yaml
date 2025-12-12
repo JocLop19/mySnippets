@@ -515,7 +515,7 @@ script:
         }
 
         await context.sync();
-        console.log("Texto fora dos blocos removido!");
+        console.log("Textos fora dos blocos removidos!");
       });
 
       document.getElementById("status").innerText = "Concluído!";
