@@ -1,0 +1,1 @@
+alert("Execução do Script 1 com sucesso!")
