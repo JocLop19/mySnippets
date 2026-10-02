@@ -1,0 +1,717 @@
+name: Codificação ICO 1.4.9
+description: Script para criação de codificação e pauta iconográfica do documento
+host: WORD
+api_set: {}
+script:
+  content: >-
+    // Codificação Iconografia - Arco Educação - 3 jul 2025 // Cleiton Gonçalves
+
+    /*
+
+    Script para criar ou remover retrancas da iconografia e criar pauta
+    iconográfica.
+
+    v1.1.5 - Código refatorado com base em modelo criado em Curitiba. 
+
+    v1.1.7 - Corrigido delimitador de caminho para casos Mac/Windows, array de
+    lista icono corrigida para limpar a cada uso. Condicional quando nenhuma
+    retranca for encontrada em Criar Pauta 
+
+    v1.1.8 - Alterada função criarPauta para capturar página da retranca.
+
+    v1.1.9 - Alterada função criarPauta para resultado condicionado.
+
+    v1.2.0 - Alterado método para contornar problema com identificação de página
+    no macOS
+
+    v1.2.1 - Código para criação de retrancas simplificado
+
+    v1.2.2 - Checkbox tipos alterado para checked
+
+    v1.2.3 - Adicionados botões para escolha de número inicial
+
+    v1.3.0 - Lógica de identificação de briefings alterada para reconhecer
+    caracteres ao final dos colchetes angulares
+
+    v1.3.1 - Função determinarTipo alterada para considerar primeira
+    palavra-chave encontrada
+
+    v1.3.2 - Janela e código alterado pra receber valores iniciais individuais,
+    declaração de delimiter em obterNomeArquivo alterada de const pra let
+
+    v1.3.3 - Correções gerais / cópia automática ao criar pauta
+
+    v1.3.5 - Método copiarParaAreaDeTransferencia alterado para funcionar no mac
+
+    v1.3.6 - Comentários adicionados e ajuste na resposta de
+    copiarParaAreaDeTransferencia [estável]
+
+    v1.4.0 - Adicionada função criar documento para Ilustração 
+
+    v1.4.1 - Adicionada lógica em gerarCopiaFiltrada para manter blocos de texto
+
+    v1.4.3 - Ajustado método para limpar campos antes de remover parágrafos em
+    gerarCopiaFiltrada
+
+    v1.4.4 - Script atualizado para Funcionar com CMS
+
+    v1.4.5 - Função criar documento para Ilustração, alterada para atender
+    atender CMS
+
+    v1.4.6 - Função criar documento para Ilustração, alterada para atender time
+    de Cartografia 
+
+    v1.4.7 - Funções condificar e criarPauta atualizada para atender novas
+    regras de ICO
+
+    v1.4.8 - Inclusão de retranca V (vídeo) e simplificação massiva da lógica de
+    Gerar Cópia Filtrada.
+
+    v1.4.9 - Inclusão do tipo V na Pauta; Extração avançada de campos para CAR e
+    ILU; Remoção completa de tabelas em gerarCopiaFiltrada.
+
+
+
+    ...
+
+    */
+
+
+    function obterVersaoScript() {
+      return "v1.4.9";
+    }
+
+
+    /* ============================================================
+       VAR GLOBAL PARA O BOTÃO 'COPIAR PAUTA'
+       ============================================================ */
+    window.__ultimaPautaGerada = "";
+
+
+    /* ============================================================
+       EVENTOS PRINCIPAIS
+       ============================================================ */
+    Office.onReady((info) => {
+      if (info.host === Office.HostType.Word) {
+        document.getElementById("btnCodificar").onclick = codificar;
+        document.getElementById("btnDescodificar").onclick = descodificar;
+
+        document.getElementById("btnCriarPauta").onclick = criarPauta;
+
+        // IMPORTANTE: NÃO PASSAR EVENTO PARA FUNÇÃO DE CÓPIA
+        document.getElementById("btnCopiarPauta").onclick = function () {
+          if (!window.__ultimaPautaGerada) {
+            console.log("Nenhuma pauta criada ainda.");
+            return;
+          }
+          copiarParaAreaDeTransferencia(window.__ultimaPautaGerada);
+          console.log("Pauta copiada para a área de transferência!");
+        };
+
+        // Adicionado em 1.4.0
+        document.getElementById("btnGerar").onclick = abrirPopupConfirmacao;
+
+        document.getElementById("simBtn").onclick = () => {
+          fecharPopup();
+          gerarCopiaFiltrada();
+        };
+
+        document.getElementById("naoBtn").onclick = () => {
+          fecharPopup();
+          document.getElementById("status").innerText = "Processo cancelado!";
+        };
+      }
+    });
+
+
+    /* ============================================================
+       FUNÇÃO DE CÓPIA — CORRIGIDA (A2)
+       ============================================================ */
+    function copiarParaAreaDeTransferencia(texto) {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = texto;
+
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.left = "-9999px";
+
+        document.body.appendChild(textarea);
+
+        textarea.focus();
+        textarea.select();
+
+        const sucesso = document.execCommand("copy");
+        document.body.removeChild(textarea);
+
+        if (!sucesso) {
+          console.warn("Falhou ao copiar via execCommand.");
+        } else {
+          console.log("Pauta criada e copiada para a área de transferência!");
+        }
+      } catch (e) {
+        console.error("Erro ao copiar:", e);
+        console.log("Não foi possível copiar automaticamente. Copie manualmente.");
+      }
+    }
+
+
+    /* ============================================================
+       FUNÇÃO PRINCIPAL: CODIFICAR
+       ============================================================ */
+    async function codificar() {
+      console.clear();
+
+      await Word.run(async (context) => {
+        const fileName = await obterNomeArquivo();
+
+        if (fileName === "") {
+          console.log("Salve o documento corretamente e tente novamente!");
+          return;
+        }
+
+        // Carregando todos os parágrafos
+        const body = context.document.body;
+        const paragraphs = body.paragraphs.load("items");
+        await context.sync();
+
+        // Criando prefixo a partir do nome do arquivo
+        const prefix = fileName.trim();
+
+        // Lê valores dos inputs e garante fallback em 1
+        let fVal = parseInt(document.getElementById("txtF").value);
+        let tVal = parseInt(document.getElementById("txtT").value);
+        let cartoVal = parseInt(document.getElementById("txtCarto").value);
+        let iluVal = parseInt(document.getElementById("txtIlu").value);
+        let dVal = parseInt(document.getElementById("txtD").value);
+        let vVal = parseInt(document.getElementById("txtV").value);
+
+        function validar(n) {
+          if (isNaN(n) || n < 1) return 1;
+          return n;
+        }
+
+        fVal = validar(fVal);
+        tVal = validar(tVal);
+        cartoVal = validar(cartoVal);
+        iluVal = validar(iluVal);
+        dVal = validar(dVal);
+        vVal = validar(vVal);
+
+        // Inicializa os contadores com base nos inputs
+        const counters = {
+          F: fVal,
+          T: tVal,
+          M: cartoVal,
+          I: iluVal,
+          CD: dVal,
+          V: vVal,
+        };
+
+        const icoRegex = /\bico\b/;
+        const iluRegex = /\bilu\b/;
+        const cartoRegex = /\b(carto|car)\b/;
+        const digRegex = /\bdig\b/;
+
+        const startAssetRegex = /\bstart asset\b/;
+        const startSolicitationRegex = /\bstart solicitation\b/;
+
+        // Controle para pular parágrafos já processados no "lookahead"
+        const skipIndices = new Set();
+
+        for (let i = 0; i < paragraphs.items.length; i++) {
+          if (skipIndices.has(i)) continue;
+
+          const paragraph = paragraphs.items[i];
+          const paragraphText = paragraph.text.trim().toLowerCase();
+
+          // Extrai apenas o conteúdo até o fechamento ">"
+          if (paragraphText.startsWith("<") && paragraphText.includes(">")) {
+            const cleanText = paragraphText.replace(/^(<[^>]*>).*/, "$1");
+
+            // 1. SE É UMA ABERTURA DE SOLICITAÇÃO
+            if (startSolicitationRegex.test(cleanText)) {
+              let hasAsset = false;
+              let assetIndex = -1;
+
+              // Olha os próximos 2 parágrafos
+              for (let j = 1; j <= 2; j++) {
+                if (i + j < paragraphs.items.length) {
+                  const nextText = paragraphs.items[i + j].text.trim().toLowerCase();
+                  if (startAssetRegex.test(nextText)) {
+                    hasAsset = true;
+                    assetIndex = i + j;
+                    break;
+                  }
+                }
+              }
+
+              if (hasAsset) {
+                // CENÁRIO 1: Achou ASSET nos próximos parágrafos
+                const assetText = paragraphs.items[assetIndex].text.trim().toLowerCase().replace(/^(<[^>]*>).*/, "$1");
+                const tipo = determinarTipo(assetText, icoRegex, iluRegex, cartoRegex, digRegex, startAssetRegex);
+
+                if (tipo) {
+                  const sufixo = gerarSufixo(tipo, prefix, counters);
+                  paragraphs.items[assetIndex].load("style");
+                  await context.sync();
+
+                  const nextParagraph = paragraphs.items[assetIndex].insertParagraph(`<<${sufixo}>>`, Word.InsertLocation.after);
+                  nextParagraph.style = paragraphs.items[assetIndex].style;
+
+                  // Adiciona o index do ASSET no skip para não criar retranca dupla no fallback abaixo
+                  skipIndices.add(assetIndex);
+                }
+              } else {
+                // CENÁRIO 2: NÃO achou ASSET, cria retranca logo após a Solicitação
+
+                // Juntamos a tag <START SOLICITATION ICO> com o briefing (parágrafo abaixo)
+                // para que a função determinarTipo consiga achar as palavras-chave (imagem, mapa, etc.)
+                let textoParaAnalise = cleanText;
+                if (i + 1 < paragraphs.items.length) {
+                  textoParaAnalise += " " + paragraphs.items[i + 1].text.trim().toLowerCase();
+                }
+
+                const tipo = determinarTipo(textoParaAnalise, icoRegex, iluRegex, cartoRegex, digRegex, startAssetRegex);
+
+                if (tipo) {
+                  const sufixo = gerarSufixo(tipo, prefix, counters);
+                  paragraph.load("style");
+                  await context.sync();
+
+                  const nextParagraph = paragraph.insertParagraph(`<<${sufixo}>>`, Word.InsertLocation.after);
+                  nextParagraph.style = paragraph.style;
+                }
+              }
+            }
+            // 2. FALLBACK (Caso encontre uma tag solta que não veio após um START SOLICITATION)
+            else {
+              const tipo = determinarTipo(cleanText, icoRegex, iluRegex, cartoRegex, digRegex, startAssetRegex);
+
+              if (tipo) {
+                const sufixo = gerarSufixo(tipo, prefix, counters);
+                const code = `<<${sufixo}>>`;
+
+                paragraph.load("style");
+                await context.sync();
+
+                if (startAssetRegex.test(cleanText)) {
+                  const nextParagraph = paragraph.insertParagraph(`${code}`, Word.InsertLocation.after);
+                  nextParagraph.style = paragraph.style;
+                } else {
+                  const previousParagraph = paragraph.insertParagraph(`${code}`, Word.InsertLocation.before);
+                  previousParagraph.style = paragraph.style;
+                }
+              }
+            }
+          }
+        }
+
+        await context.sync();
+        console.log("Codificação adicionada!");
+      });
+    }
+
+
+    /* ============================================================
+       OBTÉM NOME DO ARQUIVO
+       ============================================================ */
+    function obterNomeArquivo() {
+      return new Promise((resolve, reject) => {
+        Office.context.document.getFilePropertiesAsync((result) => {
+          if (result.status === Office.AsyncResultStatus.Succeeded) {
+            const url = result.value.url;
+            if (!url) return resolve("");
+
+            let delimiter = "";
+            if (/\//.test(url)) delimiter = "/";
+            else if (/\\/.test(url)) delimiter = "\\";
+
+            const fullFileName = url.substring(url.lastIndexOf(delimiter) + 1);
+            const partsFileName = fullFileName.split(".");
+            resolve(partsFileName[0]);
+          } else {
+            reject(result.error);
+          }
+        });
+      });
+    }
+
+
+    /* ============================================================
+       FUNÇÃO DETERMINAR TIPO
+       ============================================================ */
+    function determinarTipo(text, icoRegex, iluRegex, cartoRegex, digRegex,
+    startAssetRegex) {
+      const clean = text.replace(/^<|>$/g, "").trim().toLowerCase(); // remove < >
+
+      // Novo caso: START ASSET - alterado em 1.4.4
+      if (startAssetRegex.test(clean)) {
+        if (clean.includes("imagem licenciada")) return "F";
+        if (clean.includes("texto de terceiro")) return "T";
+        return null;
+      }
+
+      // Caso seja ICO → aplicar regra de prioridade pela primeira palavra-chave
+      if (icoRegex.test(clean)) {
+        const keywords = [
+          { key: "imagem", type: "F" },
+          { key: "foto", type: "F" },
+          { key: "ilustração", type: "I" },
+          { key: "mapa", type: "M" },
+          { key: "texto", type: "T" },
+          { key: "video", type: "V" },
+          { key: "vídeo", type: "V" },
+        ];
+
+        let earliest = Infinity;
+        let chosen = null;
+
+        // Encontra a primeira palavra-chave que aparece no texto
+        for (let k of keywords) {
+          const idx = clean.indexOf(k.key);
+          if (idx !== -1 && idx < earliest) {
+            earliest = idx;
+            chosen = k.type;
+          }
+        }
+
+        return chosen; // já retorna se for ICO
+      }
+
+      /*
+      // REGRA ANTIGA (ILU, CARTO, DIG…)
+      if (
+        (clean.includes("arte:") || clean.includes("dia:")) &&
+        (clean.includes("reaproveitar") || clean.includes("disponibilizar"))
+      ) {
+        if (clean.includes("imagem") || clean.includes("foto")) return "F";
+        if (clean.includes("ilustração")) return "I";
+        if (clean.includes("mapa")) return "M";
+        if (clean.includes("texto")) return "T";
+      }
+
+      */
+
+      // Adicionamos a condição para barrar parágrafos com "END SOLICITATION" // Adicionado em 1.4.4
+      if (!clean.includes("end solicitation")) {
+        if (iluRegex.test(clean)) return "I";
+        if (cartoRegex.test(clean)) return "M";
+        if (digRegex.test(clean)) return "CD";
+      }
+
+      return null;
+    }
+
+
+    /* ============================================================
+       GERA SUFIXO
+       ============================================================ */
+    function gerarSufixo(tipo, prefix, counters) {
+      const count = counters[tipo]++;
+      const padded = count.toString().padStart(3, "0");
+      return `${prefix}_${tipo}${padded}`;
+    }
+
+
+    /* ============================================================
+       DESCODIFICAR
+       ============================================================ */
+    async function descodificar() {
+      await Word.run(async (context) => {
+        const paragraphs = context.document.body.paragraphs.load("items");
+        await context.sync();
+
+        for (let i = paragraphs.items.length - 1; i >= 0; i--) {
+          const p = paragraphs.items[i];
+          const text = p.text.trim();
+          if (text.startsWith("<<") && text.endsWith(">>")) {
+            p.delete();
+          }
+        }
+
+        await context.sync();
+        console.log("Codificação removida!");
+      });
+    }
+
+
+    /* ============================================================
+       CRIAR PAUTA ICONOGRÁFICA + ARMAZENAR + COPIAR
+       ============================================================ */
+    async function criarPauta() {
+      const listIco = [];
+      const listCarto = [];
+      const listIlu = [];
+
+      const chkIco = document.getElementById("chkIco").checked;
+      const chkCarto = document.getElementById("chkCarto").checked;
+      const chkIlu = document.getElementById("chkIlu").checked;
+
+      await Word.run(async (context) => {
+        const paragraphs = context.document.body.paragraphs.load("items");
+        await context.sync();
+
+        // Para limpar prefixos
+        const limparPrefixo = (texto) => texto.replace(/^[^:]*:\s*/, "").trim();
+
+        for (let i = 0; i < paragraphs.items.length; i++) {
+          const paragraph = paragraphs.items[i];
+          const paragraphText = paragraph.text.trim();
+
+          if (paragraphText.startsWith("<<") && paragraphText.endsWith(">>")) {
+            const retranca = paragraphText.replace("<<", "").replace(">>", "").trim();
+            const codigo = retranca.toUpperCase();
+
+            // 1) Captura a página
+            let pageNumber = "?";
+            try { // método pages parece não ser suportado em algumas instâncias do macOS, o try/catch resolve
+              const retrancaRange = paragraph.getRange();
+              const pages = retrancaRange.pages;
+              pages.load();
+              await context.sync();
+
+              if (pages.items.length > 0) {
+                pageNumber = pages.items[0].index.toString();
+              }
+            } catch (e) { }
+
+            let linha = "";
+
+            // 2) REGRA PARA CARTO (_M) -> 5 campos abaixo
+            if (/_M\d{3}$/.test(codigo)) {
+              const desc = i + 1 < paragraphs.items.length ? paragraphs.items[i + 1].text.trim() : "";
+              const novo = i + 2 < paragraphs.items.length ? paragraphs.items[i + 2].text.trim() : "";
+              const tit = i + 3 < paragraphs.items.length ? paragraphs.items[i + 3].text.trim() : "";
+              const tam = i + 4 < paragraphs.items.length ? paragraphs.items[i + 4].text.trim() : "";
+              const fnt = i + 5 < paragraphs.items.length ? paragraphs.items[i + 5].text.trim() : "";
+
+              // Limpando os prefixos ("Briefing: ", "Título: ", etc.)
+              desc = limparPrefixo(desc);
+              novo = limparPrefixo(novo);
+              tit = limparPrefixo(tit);
+              tam = limparPrefixo(tam);
+              fnt = limparPrefixo(fnt);
+
+              // Formato: [PAG] \t [RETRANCA] \t [DESCRICAO] \t [NOVO] \t [TITULO] \t [TAMANHO] \t [FONTE]
+              linha = `${pageNumber}\t${retranca}\t${desc}\t${novo}\t${tit}\t${tam}\t${fnt}`;
+              if (chkCarto) listCarto.push(linha);
+            }
+
+            // 3) REGRA PARA ILU (_I) -> 3 campos abaixo
+            else if (/_I\d{3}$/.test(codigo)) {
+              const desc = i + 1 < paragraphs.items.length ? paragraphs.items[i + 1].text.trim() : "";
+              const form = i + 2 < paragraphs.items.length ? paragraphs.items[i + 2].text.trim() : "";
+              const fnt = i + 3 < paragraphs.items.length ? paragraphs.items[i + 3].text.trim() : "";
+
+              // Limpando os prefixos
+              desc = limparPrefixo(desc);
+              form = limparPrefixo(form);
+              fnt = limparPrefixo(fnt);
+
+              // Formato: [PAG] \t [RETRANCA] \t [DESCRICAO] \t [FORMATO] \t [LINK]
+              linha = `${pageNumber}\t${retranca}\t${desc}\t${form}\t${fnt}`;
+              if (chkIlu) listIlu.push(linha);
+            }
+
+            // 4) REGRA PARA ICO (_F, _T, _V) -> Lógica antiga mantida
+            else if (/_(F|T|V)\d{3}$/.test(codigo)) {
+              let descricao = "";
+
+              // Verifica o parágrafo imediatamente ACIMA da retranca
+              const anterior = i > 0 ? paragraphs.items[i - 1].text.trim().toLowerCase() : "";
+
+              // CENÁRIO 1: A retranca está após o START ASSET
+              // Posição: [i-2] Briefing -> [i-1] START ASSET -> [i] Retranca
+              if (anterior.includes("start asset")) {
+                descricao = i > 1 ? paragraphs.items[i - 2].text.trim() : "";
+              }
+
+              // CENÁRIO 2: A retranca está após o START SOLICITATION
+              // Posição: [i-1] START SOLICITATION -> [i] Retranca -> [i+1] Briefing
+              else if (anterior.includes("start solicitation")) {
+                descricao = i < paragraphs.items.length - 1 ? paragraphs.items[i + 1].text.trim() : "";
+              }
+
+              // FALLBACK DE SEGURANÇA: Se as regras acima falharem, assume o de baixo
+              else {
+                descricao = i < paragraphs.items.length - 1 ? paragraphs.items[i + 1].text.trim() : "";
+              }
+
+              // Limpeza de segurança: Se a descrição capturar acidentalmente uma TAG inteira, remove ela.
+              if (descricao.startsWith("<")) {
+                descricao = descricao.replace(/<[^>]*>/g, '').trim();
+              }
+
+              // Limpando os prefixos
+              descricao = limparPrefixo(descricao);
+
+              linha = `${pageNumber}\t${retranca}\t${descricao}`;
+              if (chkIco) listIco.push(linha);
+            }
+          }
+        }
+
+        // ---- MONTA RESULTADO FINAL ----
+        let resultadoFinal = "";
+
+        if (chkIco) resultadoFinal += (listIco.length ? listIco.join("\n") : "Nenhuma ICO encontrada!") + "\n\n";
+        if (chkCarto) resultadoFinal += (listCarto.length ? listCarto.join("\n") : "Nenhuma CARTO encontrada!") + "\n\n";
+        if (chkIlu) resultadoFinal += (listIlu.length ? listIlu.join("\n") : "Nenhuma ILU encontrada!") + "\n\n";
+
+        resultadoFinal = resultadoFinal.trim();
+
+        console.log("=== PAUTA ICONOGRÁFICA ===\n" + resultadoFinal);
+
+        // SALVA P/ BOTÃO 'COPIAR'
+        window.__ultimaPautaGerada = resultadoFinal;
+
+        // COPIA IMEDIATAMENTE
+        copiarParaAreaDeTransferencia(resultadoFinal);
+      });
+    }
+
+
+    /* ============================================================
+       ABRE E FECHA O MODAL DE CONFIRMAÇÃO
+       ============================================================ */
+
+    function abrirPopupConfirmacao() {
+      document.getElementById("modal").style.display = "flex";
+    }
+
+
+    function fecharPopup() {
+      document.getElementById("modal").style.display = "none";
+    }
+
+
+    /* ============================================================
+     GERANDO CÓPIA FILTRADA (Simplificado)
+     ============================================================ */
+    async function gerarCopiaFiltrada() {
+      // 1) Identifica qual radio button está selecionado a partir dos IDs do novo HTML
+      let tipoTag = "";
+      if (document.getElementById("chkDocParaIco").checked) tipoTag = "ICO";
+      if (document.getElementById("chkDocParaCar").checked) tipoTag = "CAR";
+      if (document.getElementById("chkDocParaIlu").checked) tipoTag = "ILU";
+      if (document.getElementById("chkDocParaDig").checked) tipoTag = "DIG";
+
+      if (!tipoTag) {
+        document.getElementById("status").innerText = "Selecione uma opção (ICO, CAR, ILU ou DIG)!";
+        return;
+      }
+
+      document.getElementById("status").innerText = "Processando...";
+
+      // 2) Cria a regra de texto exata para achar o bloco escolhido (ignora maiúsculas/minúsculas)
+      const startRegex = new RegExp(`\\<START SOLICITATION ${tipoTag}\\>`, "i");
+      const endRegex = new RegExp(`\\<END SOLICITATION ${tipoTag}\\>`, "i");
+
+      await Word.run(async (context) => {
+        const paragraphs = context.document.body.paragraphs;
+        paragraphs.load("items");
+        await context.sync();
+
+        const n = paragraphs.items.length;
+
+        // Array para marcar se vamos manter (true) ou deletar (false) o parágrafo
+        const keep = new Array(n).fill(false);
+
+        let inBlock = false;
+        let foundAnyBlock = false;
+
+        // 3) Varre do início ao fim do documento marcando o que é para manter
+        for (let i = 0; i < n; i++) {
+          const text = (paragraphs.items[i].text || "").trim();
+
+          if (!inBlock) {
+            // Procurando a tag de INÍCIO do tipo selecionado
+            if (startRegex.test(text)) {
+              inBlock = true;
+              foundAnyBlock = true;
+              keep[i] = true; // Mantém a própria tag <START...>
+            }
+          } else {
+            // DENTRO DO BLOCO -> Mantém todo o conteúdo
+            keep[i] = true;
+
+            // Procurando a tag de FIM
+            if (endRegex.test(text)) {
+              inBlock = false; // Mantém a tag <END...> e fecha o ciclo de preservação
+
+              // Adicionar uma linha em branco após a tag de fim para separar visualmente as solicitações
+              const p = paragraphs.items[i];
+              p.insertParagraph("", Word.InsertLocation.after);
+            }
+          }
+        }
+
+        if (!foundAnyBlock) {
+          console.warn("Nenhum bloco encontrado.");
+          document.getElementById("status").innerText = `Nenhum bloco ${tipoTag} encontrado.`;
+          return;
+        }
+
+        // 4) REMOVE OS PARÁGRAFOS QUE NÃO ESTÃO MARCADOS PARA MANTER (de trás para frente)
+        for (let i = n - 1; i >= 0; i--) {
+          if (!keep[i]) {
+            await apagarParagrafoSeguro(paragraphs.items[i], context);
+          }
+        }
+
+        await context.sync();
+        console.log(`Documento limpo! Apenas blocos de ${tipoTag} foram mantidos.`);
+      });
+
+      document.getElementById("status").innerText = "Concluído com sucesso!";
+    }
+
+
+    // Função auxiliar para remover parágrafos e tabelas
+
+    async function apagarParagrafoSeguro(paragraph, context) {
+      try {
+        // 1) Verifica se este parágrafo está dentro de uma tabela
+        const table = paragraph.parentTableOrNullObject;
+        table.load("isNullObject");
+        await context.sync();
+
+        if (!table.isNullObject) {
+          // 2) Se estiver numa tabela, apaga a tabela inteira!
+          table.delete();
+          await context.sync();
+        } else {
+          // 3) Se for um parágrafo normal, limpa formatações complexas e depois deleta
+          const range = paragraph.getRange();
+          range.clear();
+          await context.sync();
+          paragraph.delete();
+        }
+      } catch (e) {
+        // Ignora erros silenciosamente.
+        // Como apagamos os dados de trás para frente, ao apagar uma tabela, os demais
+        // parágrafos dessa tabela deixarão de existir no Word. O script vai tentar apagá-los
+        // novamente e gerar um erro, que cai aqui e é seguramente ignorado.
+      }
+    }
+  language: typescript
+template:
+  content: "<section class=\"ms-Fabric samples ms-font-m\">\n\n\n\n\t<h3>Codificação</h3>\n\n\n\n\t<div style=\"margin-left: 20px; display: flex; gap: 10px;\">\n\n\t\t<label>F: <input type=\"text\" id=\"txtF\" value=\"1\" style=\"width:25px;\"></label>\n\n\t\t<label>T: <input type=\"text\" id=\"txtT\" value=\"1\" style=\"width:25px;\"></label>\n\n\t\t<label>M: <input type=\"text\" id=\"txtCarto\" value=\"1\" style=\"width:25px;\"></label>\n\n\t\t<label>I: <input type=\"text\" id=\"txtIlu\" value=\"1\" style=\"width:25px;\"></label>\n\n\t\t<label>CD: <input type=\"text\" id=\"txtD\" value=\"1\" style=\"width:25px;\"></label>\n\n\t\t<label>V: <input type=\"text\" id=\"txtV\" value=\"1\" style=\"width:25px;\"></label>\n\n\t</div>\n\n\n\n\t<p style=\"display: flex; gap: 5px; margin-left: 0px;\">\n\n\t\t<button id=\"btnCodificar\" class=\"ms-Button\">\n\n            <span class=\"ms-Button-label\">Codificar</span>\n\n        </button>\n\n\n\n\t\t<button id=\"btnDescodificar\" class=\"ms-Button\">\n\n            <span class=\"ms-Button-label\">Descodificar</span>\n\n        </button>\n\n\t</p>\n\n\n\n\t<h4>Pauta iconográfica</h4>\n\n\n\n\t<div style=\"margin-left: 20px; display: flex; gap: 10px;\">\n\n\t\t<label><input type=\"checkbox\" id=\"chkIco\" checked> ICO</label>\n\n\t\t<label><input type=\"checkbox\" id=\"chkCarto\" checked> CARTO</label>\n\n\t\t<label><input type=\"checkbox\" id=\"chkIlu\" checked> ILU</label>\n\n\t</div>\n\n\n\n\t<p style=\"display: flex; gap: 10px;\">\n\n\t\t<button id=\"btnCriarPauta\" class=\"ms-Button\">\n\n            <span class=\"ms-Button-label\">Criar Pauta</span>\n\n        </button>\n\n\n\n\t\t<button id=\"btnCopiarPauta\" class=\"ms-Button\">\n\n            <span class=\"ms-Button-label\">Copiar Pauta</span>\n\n        </button>\n\n\t</p>\n\n\n\n\t<hr style=\"height:2px;border-width:0;color:#d4dde0;background-color:#d4dde0\">\n\n\n\n\t<!-- GERANDO DOC SEPARADO -->\n\n\t<div>\n\n\t\t<h4>Gerar documento separado</h4>\n\n\n\n\t\t<div style=\"margin-bottom: 15px; margin-left: 20px; display: flex; gap: 10px;\">\n\n\t\t\t<label><input type=\"radio\" id=\"chkDocParaIco\" name=\"tipoDoc\"> ICO</label>\n\n\t\t\t<label><input type=\"radio\" id=\"chkDocParaCar\" name=\"tipoDoc\"> CAR</label>\n\n\t\t\t<label><input type=\"radio\" id=\"chkDocParaIlu\" name=\"tipoDoc\"> ILU</label>\n\n\t\t\t<label><input type=\"radio\" id=\"chkDocParaDig\" name=\"tipoDoc\"> DIG</label>\n\n\t\t</div>\n\n\n\n\t\t<button id=\"btnGerar\" class=\"ms-Button\">\n\n<span class=\"ms-Button-label\">Gerar Documento</span>\n\n</button>\n\n\t\t<br>\n\n\t\t<div id=\"status\" style=\"color: green;\"></div>\n\n\t</div>\n\n\n\n\t<!-- MODAL POPUP -->\n\n\t<div id=\"modal\" style=\"\n\ndisplay:none;\n\nposition:fixed;\n\ntop:0; left:0;\n\nwidth:100%; height:100%;\n\nbackground:rgba(0,0,0,0.5);\n\njustify-content:center;\n\nalign-items:center;\n\n\">\n\n\t\t<div style=\"\n\nbackground:white;\n\npadding:20px;\n\nborder-radius:8px;\n\nwidth:260px;\n\ntext-align:center;\n\nfont-family:Arial;\n\n\">\n\n\t\t\t<h3>Confirmação</h3>\n\n\t\t\t<p>Esta ação irá remover todo o conteúdo exceto o que estiver entre as tags START e END da solicitação\n\t\t\t\tescolhida, certifique-se que está\n\n\t\t\t\talterando\n\n\t\t\t\tuma <b>Cópia do Original</b>, deseja prosseguir?</p>\n\n\n\n\n\n\t\t\t<p style=\"display: flex; gap: 10px;\">\n\n\t\t\t\t<button id=\"simBtn\" class=\"ms-Button\">\n\n<span class=\"ms-Button-label\">Sim</span>\n\n</button>\n\n\n\n\t\t\t\t<button id=\"naoBtn\" class=\"ms-Button\">\n\n<span class=\"ms-Button-label\">Não</span>\n\n</button>\n\n\t\t\t</p>\n\n\n\n\t\t</div>\n\n\t</div>\n\n\n\n\t<!-- FIM DOC SEPARADO -->\n\n\n\n\t<div id=\"versao\" style=\"margin-top:20px; font-size:12px; color:#666;\"></div>\n\n\n\n\t<script>\n\t\twindow.onload = function () {\n\n            try {\n\n                document.getElementById(\"versao\").innerText = obterVersaoScript();\n\n            } catch (e) {\n\n                document.getElementById(\"versao\").innerText = \"Versão do script: (não disponível)\";\n\n                console.error(\"Erro ao obter versão:\", e);\n\n            }\n\n        };\n\n\t</script>\n\n\n\n</section>"
+  language: html
+style:
+  content: |-
+    section.samples {
+        margin-top: 20px;
+    }
+
+    section.samples .ms-Button, section.setup .ms-Button {
+        display: block;
+        margin-bottom: 5px;
+        margin-left: 20px;
+        min-width: 80px;
+    }
+  language: css
+libraries: |
+  https://unpkg.com/office-ui-fabric-core@11.1.0/dist/css/fabric.min.css
+  https://unpkg.com/office-ui-fabric-js@1.5.0/dist/css/fabric.components.min.css
